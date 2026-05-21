@@ -1,446 +1,201 @@
-`timescale 1ns / 1ps
+`timescale 1ns/1ns
 
 module uart_tb;
 
-parameter data_width = 8;
+parameter FREQ  = 50000000;
+parameter BAUDR = 9600;
+parameter WIDTH = 8;
 
 reg sys_clk;
 reg sys_rst_l;
-
 reg xmitH;
-reg [data_width-1:0] xmit_dataH;
+reg [WIDTH-1:0] xmit_dataH;
+reg uart_REC_dataH;
 
+wire uart_XMIT_dataH;
+wire xmit_doneH;
+wire xmit_active;
+wire rec_readyH;
+wire rec_busy;
+wire [WIDTH-1:0] rec_dataH;
 
+wire baud_en;
 
-wire dut_uart_xmit_datah;
-wire dut_xmit_doneH;
-wire dut_xmit_active;
+integer pass_count=0;
+integer fail_count=0;
+integer test_num=0;
 
-wire dut_rec_readyh;
-wire dut_rec_busyh;
-wire [data_width-1:0] dut_rec_datah;
+reg uart_clk_prev;
 
+initial sys_clk=0;
+always #10 sys_clk=~sys_clk;
 
-
-wire ref_uart_xmit_datah;
-wire ref_xmit_doneH;
-wire ref_xmit_active;
-
-wire ref_rec_readyh;
-wire ref_rec_busyh;
-wire [data_width-1:0] ref_rec_datah;
-
-wire ref_uart_clk;
-
-
-
-initial
-begin
-    sys_clk = 0;
-    forever #5 sys_clk = ~sys_clk;
-end
-
-
-
-uart_top DUT (
-
+uart #(
+.WORD_LEN(WIDTH),
+.BAUD_RATE(BAUDR),
+.XTAL_CLK(FREQ)
+) u_dut (
 .sys_clk(sys_clk),
 .sys_rst_l(sys_rst_l),
-
 .xmitH(xmitH),
 .xmit_dataH(xmit_dataH),
-
-.uart_XMIT_dataH(dut_uart_xmit_datah),
-.xmit_doneH(dut_xmit_doneH),
-.xmit_active(dut_xmit_active),
-
-.rec_readyH(dut_rec_readyh),
-.rec_busyH(dut_rec_busyh),
-.rec_dataH(dut_rec_datah)
-
+.uart_XMIT_dataH(uart_XMIT_dataH),
+.xmit_doneH(xmit_doneH),
+.xmit_active(xmit_active),
+.uart_REC_dataH(uart_REC_dataH),
+.rec_readyH(rec_readyH),
+.rec_busy(rec_busy),
+.rec_dataH(rec_dataH)
 );
 
+assign baud_en = u_dut.BAUD.uart_clk;
 
-
-uart_refrence REF (
-
+uart_reference #(
+.b(WIDTH)
+) u_ref (
 .sys_clk(sys_clk),
-.sys_rst_l(sys_rst_l),
-
+.baud_en(baud_en),
+.rst(sys_rst_l),
 .xmitH(xmitH),
-.xmit_dataH(xmit_dataH),
-
-.uart_REC_dataH(ref_uart_xmit_datah),
-
-.uart_XMIT_dataH(ref_uart_xmit_datah),
-.xmit_doneH(ref_xmit_doneH),
-.xmit_active(ref_xmit_active),
-
-.rec_readyH(ref_rec_readyh),
-.rec_busyH(ref_rec_busyh),
-.rec_dataH(ref_rec_datah),
-
-.uart_clk_out(ref_uart_clk)
-
+.data_in(xmit_dataH),
+.serial_in(uart_XMIT_dataH),
+.exp_rec_dataH(),
+.exp_rec_readyH(),
+.exp_rec_busy(),
+.exp_xmit_active(),
+.exp_xmit_doneH()
 );
 
-
-
-integer pass_count;
-integer fail_count;
-integer test_count;
-
-
-
-initial
+always @(*)
 begin
-    $dumpfile("uart_tb.vcd");
-    $dumpvars(0,uart_tb);
+uart_REC_dataH = uart_XMIT_dataH;
 end
 
-
-
-function compare_tx;
-
-input dut_done;
-input dut_active;
-input dut_serial;
-
-input ref_done;
-input ref_active;
-input ref_serial;
-
+task driver_send;
+input [WIDTH-1:0] data;
 begin
-
-compare_tx =
-(dut_done   === ref_done)   &&
-(dut_active === ref_active) &&
-(dut_serial === ref_serial);
-
-end
-endfunction
-
-
-
-function compare_rx;
-
-input dut_ready;
-input dut_busy;
-input [data_width-1:0] dut_data;
-
-input ref_ready;
-input ref_busy;
-input [data_width-1:0] ref_data;
-
-begin
-
-compare_rx =
-(dut_ready === ref_ready) &&
-(dut_busy  === ref_busy)  &&
-(dut_data  === ref_data);
-
-end
-endfunction
-
-
-
-task display_tx_mismatch;
-
-begin
-
-$display("DUT TX : done=%b active=%b serial=%b",
-dut_xmit_doneH,
-dut_xmit_active,
-dut_uart_xmit_datah);
-
-$display("REF TX : done=%b active=%b serial=%b",
-ref_xmit_doneH,
-ref_xmit_active,
-ref_uart_xmit_datah);
-
-end
-endtask
-
-
-
-task display_rx_mismatch;
-
-begin
-
-$display("DUT RX : ready=%b busy=%b data=0x%02X",
-dut_rec_readyh,
-dut_rec_busyh,
-dut_rec_datah);
-
-$display("REF RX : ready=%b busy=%b data=0x%02X",
-ref_rec_readyh,
-ref_rec_busyh,
-ref_rec_datah);
-
-end
-endtask
-
-
-
-task wait_tx_complete;
-
-begin
-
-wait(dut_xmit_active == 1'b0);
-wait(ref_xmit_active == 1'b0);
-
-repeat(5) @(posedge ref_uart_clk);
-
-end
-endtask
-
-
-
-task apply_test_tx;
-
-input [data_width-1:0] data;
-input [200:1] test_name;
-
-begin
-
-wait(dut_xmit_active == 1'b0);
-wait(ref_xmit_active == 1'b0);
-
-@(posedge ref_uart_clk);
-
+@(posedge baud_en);
 xmit_dataH = data;
 xmitH = 1'b1;
-
-@(posedge ref_uart_clk);
-
+@(posedge baud_en);
 xmitH = 1'b0;
+@(posedge xmit_doneH);
+repeat(20) @(posedge baud_en);
+end
+endtask
 
-wait_tx_complete;
-
-test_count = test_count + 1;
-
-if(compare_tx(
-
-dut_xmit_doneH,
-dut_xmit_active,
-dut_uart_xmit_datah,
-
-ref_xmit_doneH,
-ref_xmit_active,
-ref_uart_xmit_datah
-
-))
-
+task checker;
+input [WIDTH-1:0] sent_data;
 begin
-
-$display("[PASS] %s data=0x%02X",test_name,data);
-
+test_num = test_num + 1;
+#1;
+if(rec_dataH === sent_data)
+begin
+$display("PASS [%0d] SENT=%h REC=%h",
+test_num,sent_data,rec_dataH);
 pass_count = pass_count + 1;
-
 end
-
 else
-
 begin
-
-$display("[FAIL] %s data=0x%02X",test_name,data);
-
-display_tx_mismatch;
-
+$display("FAIL [%0d] SENT=%h REC=%h",
+test_num,sent_data,rec_dataH);
 fail_count = fail_count + 1;
-
 end
-
 end
 endtask
 
+reg [WIDTH-1:0] last_sent;
 
-
-task wait_rx_complete;
-
-integer timeout;
-
+always @(posedge rec_readyH)
 begin
-
-timeout = 0;
-
-while(
-(dut_rec_readyh != 1'b1) ||
-(ref_rec_readyh != 1'b1)
-)
-
-begin
-
-@(posedge ref_uart_clk);
-
-timeout = timeout + 1;
-
-if(timeout > 5000)
-begin
-$display("RX TIMEOUT");
-disable wait_rx_complete;
+checker(last_sent);
 end
-
-end
-
-end
-endtask
-
-
-
-task apply_test_rx;
-
-input [data_width-1:0] data;
-input [200:1] test_name;
-
-begin
-
-force DUT.u_rx.rec_ff2 = 1'b0;
-
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = data[0];
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = data[1];
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = data[2];
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = data[3];
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = data[4];
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = data[5];
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = data[6];
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = data[7];
-repeat(16) @(posedge ref_uart_clk);
-
-force DUT.u_rx.rec_ff2 = 1'b1;
-
-repeat(16) @(posedge ref_uart_clk);
-
-release DUT.u_rx.rec_ff2;
-
-wait_rx_complete;
-
-test_count = test_count + 1;
-
-if(compare_rx(
-
-dut_rec_readyh,
-dut_rec_busyh,
-dut_rec_datah,
-
-ref_rec_readyh,
-ref_rec_busyh,
-ref_rec_datah
-
-))
-
-begin
-
-$display("[PASS] %s data=0x%02X",test_name,data);
-
-pass_count = pass_count + 1;
-
-end
-
-else
-
-begin
-
-$display("[FAIL] %s data=0x%02X",test_name,data);
-
-display_rx_mismatch;
-
-fail_count = fail_count + 1;
-
-end
-
-end
-endtask
-
-
 
 initial
 begin
 
-pass_count = 0;
-fail_count = 0;
-test_count = 0;
+sys_rst_l = 1'b0;
+xmitH = 1'b0;
+xmit_dataH = 0;
+last_sent = 0;
 
-sys_rst_l = 0;
+repeat(20) @(posedge sys_clk);
 
-xmitH = 0;
-xmit_dataH = 8'h00;
+sys_rst_l = 1'b1;
 
-#200;
+repeat(10) @(posedge baud_en);
 
-sys_rst_l = 1;
+last_sent=8'h00; driver_send(8'h00);
+last_sent=8'hff; driver_send(8'hff);
+last_sent=8'h55; driver_send(8'h55);
+last_sent=8'haa; driver_send(8'haa);
+last_sent=8'h0f; driver_send(8'h0f);
+last_sent=8'hf0; driver_send(8'hf0);
+last_sent=8'h24; driver_send(8'h24);
+last_sent=8'h81; driver_send(8'h81);
+last_sent=8'h09; driver_send(8'h09);
+last_sent=8'h63; driver_send(8'h63);
+last_sent=8'h0d; driver_send(8'h0d);
+last_sent=8'h8d; driver_send(8'h8d);
+last_sent=8'h65; driver_send(8'h65);
+last_sent=8'h12; driver_send(8'h12);
+last_sent=8'h01; driver_send(8'h01);
+last_sent=8'h76; driver_send(8'h76);
+last_sent=8'h3d; driver_send(8'h3d);
+last_sent=8'hed; driver_send(8'hed);
+last_sent=8'h8c; driver_send(8'h8c);
+last_sent=8'hf9; driver_send(8'hf9);
+last_sent=8'hc6; driver_send(8'hc6);
+last_sent=8'haa; driver_send(8'haa);
+last_sent=8'he5; driver_send(8'he5);
+last_sent=8'h77; driver_send(8'h77);
+last_sent=8'h12; driver_send(8'h12);
+last_sent=8'h8f; driver_send(8'h8f);
+last_sent=8'hf2; driver_send(8'hf2);
+last_sent=8'hce; driver_send(8'hce);
+last_sent=8'he8; driver_send(8'he8);
 
-repeat(10) @(posedge ref_uart_clk);
+force u_dut.TX.state = 2'b11;
+@(posedge baud_en);
+release u_dut.TX.state;
 
-$display("--------------------------------");
-$display("UART TRANSMITTER TESTS");
-$display("--------------------------------");
+repeat(5) @(posedge baud_en);
 
-apply_test_tx(8'hA5,"TX A5");
-apply_test_tx(8'h3C,"TX 3C");
-apply_test_tx(8'h00,"TX 00");
-apply_test_tx(8'hFF,"TX FF");
-apply_test_tx(8'h55,"TX 55");
-apply_test_tx(8'hAA,"TX AA");
+force u_dut.RX.state = 2'b11;
+@(posedge baud_en);
+release u_dut.RX.state;
 
+repeat(5) @(posedge baud_en);
 
+force u_dut.TX.state = 2'b10;
+force u_dut.TX.uart_count = 4'd15;
+force u_dut.TX.bit_count = WIDTH-1;
 
-$display("--------------------------------");
-$display("UART RECEIVER TESTS");
-$display("--------------------------------");
+@(posedge baud_en);
 
-apply_test_rx(8'hA5,"RX A5");
-apply_test_rx(8'h3C,"RX 3C");
-apply_test_rx(8'h00,"RX 00");
-apply_test_rx(8'hFF,"RX FF");
-apply_test_rx(8'h55,"RX 55");
-apply_test_rx(8'hAA,"RX AA");
+release u_dut.TX.state;
+release u_dut.TX.uart_count;
+release u_dut.TX.bit_count;
 
+repeat(5) @(posedge baud_en);
 
+force u_dut.RX.state = 2'b10;
+force u_dut.RX.uart_count = 4'd15;
+force u_dut.RX.rec_ff2 = 1'b0;
 
-$display("--------------------------------");
-$display("TOTAL TESTS : %0d",test_count);
-$display("PASS        : %0d",pass_count);
-$display("FAIL        : %0d",fail_count);
+@(posedge baud_en);
 
-if(fail_count == 0)
-$display("ALL TESTS PASSED");
+release u_dut.RX.state;
+release u_dut.RX.uart_count;
+release u_dut.RX.rec_ff2;
 
-else
-$display("SOME TESTS FAILED");
+repeat(20) @(posedge baud_en);
 
-$display("--------------------------------");
-
-#1000;
-
-$finish;
-
-end
-
-
-
-initial
-begin
-
-#50000000;
-
-$display("SIMULATION TIMEOUT");
+$display("======================================");
+$display("TOTAL TESTS = %0d",test_num);
+$display("PASS        = %0d",pass_count);
+$display("FAIL        = %0d",fail_count);
+$display("======================================");
 
 $finish;
 
